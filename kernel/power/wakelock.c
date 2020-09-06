@@ -17,6 +17,8 @@
 #include <linux/list.h>
 #include <linux/rbtree.h>
 #include <linux/slab.h>
+#include <linux/workqueue.h>
+#include <linux/sched.h>
 
 #include "power.h"
 
@@ -81,7 +83,7 @@ static inline void decrement_wakelocks_number(void) {}
 
 #ifdef CONFIG_PM_WAKELOCKS_GC
 #define WL_GC_COUNT_MAX	100
-#define WL_GC_TIME_SEC	300
+#define WL_GC_TIME_SEC	60
 
 static LIST_HEAD(wakelocks_lru_list);
 static unsigned int wakelocks_gc_count;
@@ -127,6 +129,39 @@ static void wakelocks_gc(void)
 		}
 	}
 	wakelocks_gc_count = 0;
+
+	mutex_unlock(&wakelocks_lock);
+}
+
+static void wakelocks_gc(void)
+{
+	bool expedite;
+	int cpu = get_cpu();
+
+	/*
+	 * If the current CPU isn't occupied, go ahead and
+	 * garbage collect inactive wakelocks.
+	 */
+	expedite = idle_cpu(cpu);
+
+	put_cpu();
+
+	if (expedite)
+		goto do_gc;
+
+	/*
+	 * If our CPU is busy, allow wakelocks to
+	 * accumulate before attempting to garbage collect.
+	 * If by the time we register WL_GC_COUNT_MAX
+	 * wakelocks and the current CPU is still busy,
+	 * run the garbage collecton anyway.
+	 */
+
+	if (++wakelocks_gc_count <= WL_GC_COUNT_MAX)
+		return;
+
+do_gc:
+	schedule_work(&wakelock_work);
 }
 #else /* !CONFIG_PM_WAKELOCKS_GC */
 static inline void wakelocks_lru_add(struct wakelock *wl) {}
