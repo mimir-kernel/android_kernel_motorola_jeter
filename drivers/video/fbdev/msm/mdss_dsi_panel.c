@@ -3385,6 +3385,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	pinfo->mipi.lp11_init = of_property_read_bool(np,
 					"qcom,mdss-dsi-lp11-init");
+	pinfo->fw_upgrade_interrupt_disable = of_property_read_bool(np,
+					"qcom,mdss-dsi-fw-upgrade-interrupt-disable");
 	rc = of_property_read_u32(np, "qcom,mdss-dsi-init-delay-us", &tmp);
 	pinfo->mipi.init_delay = (!rc ? tmp : 0);
 
