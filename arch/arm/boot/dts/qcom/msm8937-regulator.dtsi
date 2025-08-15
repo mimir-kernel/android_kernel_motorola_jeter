@@ -15,8 +15,8 @@
 	rpm-regulator-smpa1 {
 		status = "okay";
 		pm8937_s1: regulator-s1 {
-			regulator-min-microvolt = <1000000>;
-			regulator-max-microvolt = <1225000>;
+			regulator-min-microvolt = <980000>;
+			regulator-max-microvolt = <1205000>;
 			qcom,init-voltage = <1000000>;
 			status = "okay";
 		};
@@ -359,8 +359,8 @@
 		regulator-max-microvolt = <7>;
 
 		qcom,cpr-fuse-corners = <3>;
-		qcom,cpr-voltage-ceiling = <1155000 1225000 1350000>;
-		qcom,cpr-voltage-floor =   <1050000 1050000 1090000>;
+		qcom,cpr-voltage-ceiling = <1135000 1205000 1330000>;
+		qcom,cpr-voltage-floor =   <1030000 1030000 1070000>;
 		vdd-apc-supply = <&pm8937_s5>;
 
 		mem-acc-supply = <&mem_acc_vreg_corner>;
