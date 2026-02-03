@@ -1,0 +1,129 @@
+name: Mimir-Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_target:
+        description: 'Upload destination'
+        required: true
+        default: 'github'
+        type: choice
+        options:
+          - github
+          - gofile
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      DEVICE: jeter
+      DEVICE_NAME: Motorola G6 Play
+      KERNEL_NAME: Mimir Kernel
+
+    steps:
+      - name: Check Out
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set Timezone
+        run: |
+          sudo ln -snf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime
+          echo "America/Sao_Paulo" | sudo tee /etc/timezone
+
+      - name: Setting up the environment
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gcc-aarch64-linux-gnu jq zip curl git make python3 perl libssl-dev libelf-dev bc
+          
+          # Creates the manual symbolic link to replace the old python-is-python3
+          sudo ln -sf /usr/bin/python3 /usr/bin/python
+
+          echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+          echo "REPO_NAME=${GITHUB_REPOSITORY#*/}" >> $GITHUB_ENV
+          echo "CHANGELOG<<EOF" >> $GITHUB_ENV
+          git log --oneline --since="96 hours ago" --no-merges >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Notify Build Started
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+          -d "parse_mode=markdown" \
+          -d "text=🚀 *New version of Mimir Kernel is compiling!*%0A%0A📦 *Repo:* \`${{ env.REPO_NAME }}\` %0A📱 *Device:* ${{ env.DEVICE_NAME }} (\`${{ env.DEVICE }}\`) %0A🌿 *Branch:* \`${{ github.ref_name }}\` %0A⏳ *Please wait for completion...*" \
+          -d "reply_markup={\"inline_keyboard\":[[{\"text\":\"🔍 View real-time log\",\"url\":\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}]]}"
+
+      - name: Run build script
+        run: |
+          ./build.sh ${{ env.DEVICE }} -z
+        env:
+          UPLOAD_TARGET: ${{ github.event.inputs.upload_target }}
+
+      - name: Create GitHub Release
+        if: success() && github.event.inputs.upload_target == 'github'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./*.zip
+          name: "${{ env.KERNEL_NAME }} - ${{ env.DEVICE }} - ${{ env.BUILD_DATE }}"
+          tag_name: "${{ env.DEVICE }}-${{ github.run_id }}"
+          body: |
+            ### 🚀 Mimir Kernel Build
+            - **Device:** ${{ env.DEVICE_NAME }} (`${{ env.DEVICE }}`)
+            - **Build Date:** ${{ env.BUILD_DATE }}
+            - **Compiler:** `${{ env.TOOLCHAIN_VERSION }}`
+            - **SHA256:** `${{ env.ZIP_SHA256 }}`
+
+            ### 📝 Changelog
+            ${{ env.CHANGELOG || 'No new commits found.' }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Send Notification (Success)
+        if: success()
+        run: |
+          if [ "${{ github.event.inputs.upload_target }}" == "github" ]; then
+             BTN_TEXT="📥 Download (GitHub)"
+             BTN_URL="https://github.com/${{ github.repository }}/releases/tag/${{ env.DEVICE }}-${{ github.run_id }}"
+             SERVER_LINE=""
+          else
+             BTN_TEXT="📥 Download (Gofile)"
+             BTN_URL="${{ env.ZIP_DOWNLOAD_LINK }}"
+             SERVER_LINE="🌐 *Server:* \`${{ env.GOFILE_SERVER }}\` (10 days)%0A"
+          fi
+
+          MSG="✅ *New Mimir Kernel build for ${{ env.DEVICE }} available!*%0A%0A"
+          MSG+="🛠️ *Compiler:* \`$TOOLCHAIN_VERSION\`%0A"
+          MSG+="⏱️ *Time:* \`$BUILD_DURATION\`%0A"
+          MSG+="$SERVER_LINE"
+          MSG+="🔐 *SHA256:* \`$ZIP_SHA256\`"
+
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "parse_mode=markdown" \
+            -d "text=$MSG" \
+            -d "reply_markup={\"inline_keyboard\":[[{\"text\":\"$BTN_TEXT\",\"url\":\"$BTN_URL\"}]]}"
+
+      - name: Send Notification (Failure)
+        if: failure()
+        run: |
+          [ -z "$ERROR_LOG_URL" ] && ERROR_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" || ERROR_URL="$ERROR_LOG_URL"
+
+          MESSAGE="❌ *Kernel build failed!*
+          🛠️ *Compiler:* \`${TOOLCHAIN_VERSION:-Error}\`
+          🆔 *Run ID:* ${{ github.run_id }}"
+
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "parse_mode=markdown" \
+            -d "text=$MESSAGE" \
+            -d "reply_markup={\"inline_keyboard\":[[{\"text\":\"📂 View Error Log\",\"url\":\"$ERROR_URL\"}]]}"
+
+      - name: Cleanup workspace
+        if: always()
+        run: rm -rf out gcc *.zip

@@ -13,9 +13,11 @@ YLW='\033[0;33m'
 # Trap for Ctrl+C
 handle_interrupt() {
     echo -e "\n${YLW}Build interrupted by user. Exiting...${NC}"
-    DIFF=$SECONDS
-    TIME_INT="$((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)"
-    echo "BUILD_DURATION=$TIME_INT"
+    if [ ! -z "$GITHUB_ENV" ]; then
+        DIFF=$SECONDS
+        TIME_INT="$((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)"
+        echo "BUILD_DURATION=$TIME_INT" >> "$GITHUB_ENV"
+    fi
     exit 130
 }
 trap handle_interrupt SIGINT
@@ -65,6 +67,11 @@ kernel_name="Mimir"
 zip_name="$kernel_name-${DEVICE}-${TM}.zip"
 LOG_FILE="${PWD}/build_log.txt"
 
+# Export current branch name to GitHub Actions
+if [ ! -z "$GITHUB_ENV" ]; then
+    echo "BUILD_BRANCH=${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD)}" >> "$GITHUB_ENV"
+fi
+
 # Compiler Setup (GCC)
 export PATH="$toolchain_dir/bin:$PATH"
 if ! [ -d "$toolchain_dir" ]; then
@@ -80,6 +87,7 @@ GCC_FULL=$($toolchain_dir/bin/aarch64-linux-android-gcc --version 2>&1 | head -n
 GCC_FINAL=$(echo "$GCC_FULL" | sed 's/^[^(]*//')
 [ -z "$GCC_FINAL" ] && GCC_FINAL="$GCC_FULL"
 echo -e "${YLW}Using: ${GCC_FINAL}${NC}"
+[ ! -z "$GITHUB_ENV" ] && echo "TOOLCHAIN_VERSION=$GCC_FINAL" >> "$GITHUB_ENV"
 
 # Exports
 export CONFIG_FILE="${DEVICE}_defconfig"
@@ -124,6 +132,7 @@ compile() {
         RESPONSE=$(curl -s -F "content=@$LOG_FILE" https://bin.cyberknight777.dev)
         if [[ "$RESPONSE" == *"bin.cyberknight777.dev"* ]]; then
             echo -e "${YLW}Rustbin Log: ${LGR}${RESPONSE}${NC}"
+            [ ! -z "$GITHUB_ENV" ] && echo "ERROR_LOG_URL=$RESPONSE" >> "$GITHUB_ENV"
             rm -f "$LOG_FILE"
         else
             echo -e "${RED}Upload Failed! Check the build_log.txt locally.${NC}"
@@ -155,20 +164,28 @@ completion() {
 	# Generation SHA256
         echo -e "${YLW}Generating SHA256 checksum...${NC}"
         SHA256=$(sha256sum "$zip_name" | awk '{print $1}')
+        [ ! -z "$GITHUB_ENV" ] && echo "ZIP_SHA256=$SHA256" >> "$GITHUB_ENV"
 
         # Upload to Gofile
-        echo -e "${YLW}Checking Gofile status...${NC}"
-        SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name // "store1"')
-        echo -e "${YLW}Uploading ZIP to ${SERVER}...${NC}"
-        RESPONSE=$(curl -# -L -F "file=@$zip_name" "https://${SERVER}.gofile.io/contents/uploadfile")
+        if [ "$UPLOAD_TARGET" != "github" ]; then
+            echo -e "${YLW}Checking Gofile status...${NC}"
+            SERVER=$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name // "store1"')
+            [ ! -z "$GITHUB_ENV" ] && echo "GOFILE_SERVER=$SERVER" >> "$GITHUB_ENV"
+            echo -e "${YLW}Uploading ZIP to ${SERVER}...${NC}"
+            RESPONSE=$(curl -# -L -F "file=@$zip_name" "https://${SERVER}.gofile.io/contents/uploadfile")
 
-        # Validation
-        if echo "$RESPONSE" | jq -e '.status == "ok"' >/dev/null 2>&1; then
-            DOWNLOAD_LINK=$(echo "$RESPONSE" | jq -r '.data.downloadPage')
-            echo -e "${LGR}Download Link: ${NC}${DOWNLOAD_LINK}"
-            echo -e "${YLW}SHA256 Checksum: ${NC}${SHA256}"
+            # Validation
+            if echo "$RESPONSE" | jq -e '.status == "ok"' >/dev/null 2>&1; then
+                DOWNLOAD_LINK=$(echo "$RESPONSE" | jq -r '.data.downloadPage')
+                echo -e "${LGR}Download Link: ${NC}${DOWNLOAD_LINK}"
+                echo -e "${YLW}SHA256 Checksum: ${NC}${SHA256}"
+                [ ! -z "$GITHUB_ENV" ] && echo "ZIP_DOWNLOAD_LINK=$DOWNLOAD_LINK" >> "$GITHUB_ENV"
+            else
+                echo -e "${RED}Upload failed!${NC}"
+                [ ! -z "$GITHUB_ENV" ] && echo "ZIP_DOWNLOAD_LINK=" >> "$GITHUB_ENV"
+            fi
         else
-            echo -e "${RED}Upload failed!${NC}"
+            echo -e "${LGR}Target is GitHub Release. Skipping Gofile upload...${NC}"
         fi
     fi
 }
@@ -183,6 +200,7 @@ compile
 # Time build
 DIFF=$SECONDS
 BUILD_TIME="$((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)"
+[ ! -z "$GITHUB_ENV" ] && echo "BUILD_DURATION=$BUILD_TIME" >> "$GITHUB_ENV"
 
 # Only run completion (AnyKernel3) if the -z flag is present
 if [ -f "${objdir}/arch/arm64/boot/Image.gz-dtb" ]; then
