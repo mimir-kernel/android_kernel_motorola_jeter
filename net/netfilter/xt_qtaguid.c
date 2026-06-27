@@ -745,7 +745,7 @@ static int iface_stat_fmt_proc_show(struct seq_file *m, void *v)
 {
 	struct proc_iface_stat_fmt_info *p = m->private;
 	struct iface_stat *iface_entry;
-	struct rtnl_link_stats64 dev_stats, *stats;
+	struct rtnl_link_stats64 *stats;
 	struct rtnl_link_stats64 no_dev_stats = {0};
 
 
@@ -754,12 +754,8 @@ static int iface_stat_fmt_proc_show(struct seq_file *m, void *v)
 
 	iface_entry = list_entry(v, struct iface_stat, list);
 
-	if (iface_entry->active) {
-		stats = dev_get_stats(iface_entry->net_dev,
-				      &dev_stats);
-	} else {
-		stats = &no_dev_stats;
-	}
+	stats = &no_dev_stats;
+
 	/*
 	 * If the meaning of the data changes, then update the fmtX
 	 * string.
@@ -1770,7 +1766,7 @@ static bool qtaguid_mt(const struct sk_buff *skb, struct xt_action_param *par)
 		kgid_t gid_max = make_kgid(&init_user_ns, info->gid_max);
 		set_sk_callback_lock = true;
 		read_lock_bh(&sk->sk_callback_lock);
-		MT_DEBUG("qtaguid[%d]: sk=%p->sk_socket=%p->file=%p\n",
+		MT_DEBUG("qtaguid[%d]: sk=%pK->sk_socket=%pK->file=%pK\n",
 			 par->hooknum, sk, sk->sk_socket,
 			 sk->sk_socket ? sk->sk_socket->file : (void *)-1LL);
 		filp = sk->sk_socket ? sk->sk_socket->file : NULL;
