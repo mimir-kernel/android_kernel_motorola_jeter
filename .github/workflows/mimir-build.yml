@@ -19,30 +19,53 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    container:
+      image: debian:13-slim
+
     env:
       DEVICE: jeter
       DEVICE_NAME: Motorola G6 Play
       KERNEL_NAME: Mimir Kernel
 
     steps:
+      - name: Setting up the environment
+        run: |
+          apt-get update -y
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi \
+            jq \
+            zip \
+            curl \
+            git \
+            make \
+            python3 \
+            perl \
+            libssl-dev \
+            libelf-dev \
+            bc \
+            ca-certificates
+
+          # Creates the manual symbolic link to replace the old python-is-python3
+          ln -sf /usr/bin/python3 /usr/bin/python
+
       - name: Check Out
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      # Force Git to consider the current directory in the Actions container environment.
+      - name: Safe Directory Config
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Set Timezone
         run: |
           sudo ln -snf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime
           echo "America/Sao_Paulo" | sudo tee /etc/timezone
 
-      - name: Setting up the environment
+      - name: Generate Build Environment Variables
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y gcc-aarch64-linux-gnu jq zip curl git make python3 perl libssl-dev libelf-dev bc
-          
-          # Creates the manual symbolic link to replace the old python-is-python3
-          sudo ln -sf /usr/bin/python3 /usr/bin/python
-
           echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
           echo "REPO_NAME=${GITHUB_REPOSITORY#*/}" >> $GITHUB_ENV
           echo "CHANGELOG<<EOF" >> $GITHUB_ENV
@@ -86,6 +109,7 @@ jobs:
 
       - name: Send Notification (Success)
         if: success()
+        shell: bash
         run: |
           if [ "${{ github.event.inputs.upload_target }}" == "github" ]; then
              BTN_TEXT="📥 Download (GitHub)"
