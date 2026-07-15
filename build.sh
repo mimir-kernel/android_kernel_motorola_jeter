@@ -107,12 +107,23 @@ clean_all() {
 make_defconfig() {
     SECONDS=0
     echo -e "${LGR}########### Generating Defconfig ############${NC}"
-    # English: Ensure the config file exists before trying to make
+
     if [ ! -f "arch/arm64/configs/${DEVICE}_defconfig" ]; then
         echo -e "${RED}Error: ${DEVICE}_defconfig not found!${NC}"
         exit 1
     fi
-    make -s O="${objdir}" ARCH=$ARCH CC=$CC CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 ${DEVICE}_defconfig -j$(nproc --all)
+
+    # Generates the base defconfig
+    make -s O=${objdir} ARCH=$ARCH ${DEVICE}_defconfig
+
+    # Applies extra.config (overwrites as necessary)
+    if [ -f "build.config.droidspaces" ]; then
+        echo -e "${LGR}Applying config for droidspaces...${NC}"
+        cat build.config.droidspaces >> "${objdir}/.config"
+        make -s O=${objdir} ARCH=$ARCH olddefconfig
+    else
+        echo -e "${YLW}Warning: build.config.droidspaces not found!${NC}"
+    fi
 }
 
 compile() {
