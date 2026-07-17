@@ -26,6 +26,7 @@ jobs:
       DEVICE: jeter
       DEVICE_NAME: Motorola G6 Play
       KERNEL_NAME: Mimir Kernel
+      TARGET_REPO: mimir-kernel/jeter_releases
 
     steps:
       - name: Setting up the environment
@@ -68,9 +69,6 @@ jobs:
         run: |
           echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
           echo "REPO_NAME=${GITHUB_REPOSITORY#*/}" >> $GITHUB_ENV
-          echo "CHANGELOG<<EOF" >> $GITHUB_ENV
-          git log --oneline --since="96 hours ago" --no-merges >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
 
       - name: Notify Build Started
         run: |
@@ -86,26 +84,22 @@ jobs:
         env:
           UPLOAD_TARGET: ${{ github.event.inputs.upload_target }}
 
+      # Creates the release in the external target repository with link to the changelog file
       - name: Create GitHub Release
         if: success() && github.event.inputs.upload_target == 'github'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ./*.zip
-          name: "${{ env.KERNEL_NAME }} - ${{ env.DEVICE }} - ${{ env.BUILD_DATE }}"
-          tag_name: "${{ env.DEVICE }}-${{ github.run_id }}"
-          body: |
-            ### 🚀 Mimir Kernel Build
-            - **Device:** ${{ env.DEVICE_NAME }} (`${{ env.DEVICE }}`)
-            - **Build Date:** ${{ env.BUILD_DATE }}
-            - **Compiler:** `${{ env.TOOLCHAIN_VERSION }}`
-            - **SHA256:** `${{ env.ZIP_SHA256 }}`
-
-            ### 📝 Changelog
-            ${{ env.CHANGELOG || 'No new commits found.' }}
-          draft: false
-          prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          NOTES="- **Device:** ${{ env.DEVICE_NAME }}
+          - **Branch:** \`${{ github.ref_name }}\`
+
+          ### 📝 Changelog
+          The changelog for this build can be found here: [View Full Changelog](https://github.com/mimir-kernel/jeter_releases/blob/master/changelog_q.md)"
+
+          gh release create "${{ env.DEVICE }}-${{ github.run_id }}" ./*.zip \
+            --repo "${{ env.TARGET_REPO }}" \
+            --title "${{ env.KERNEL_NAME }} for ${{ env.DEVICE }} - ${{ env.BUILD_DATE }}" \
+            --notes "$NOTES"
 
       - name: Send Notification (Success)
         if: success()
@@ -113,7 +107,7 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.upload_target }}" == "github" ]; then
              BTN_TEXT="📥 Download (GitHub)"
-             BTN_URL="https://github.com/${{ github.repository }}/releases/tag/${{ env.DEVICE }}-${{ github.run_id }}"
+             BTN_URL="https://github.com/${{ env.TARGET_REPO }}/releases/tag/${{ env.DEVICE }}-${{ github.run_id }}"
              SERVER_LINE=""
           else
              BTN_TEXT="📥 Download (Gofile)"
