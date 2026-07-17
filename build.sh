@@ -64,7 +64,7 @@ objdir="${kernel_dir}/out"
 anykernel=$HOME/anykernel
 toolchain_dir="${kernel_dir}/gcc"
 kernel_name="Mimir"
-zip_name="$kernel_name-${DEVICE}-${TM}.zip"
+zip_name="$kernel_name-KSU-${DEVICE}-${TM}.zip"
 LOG_FILE="${PWD}/build_log.txt"
 
 # Export current branch name to GitHub Actions
